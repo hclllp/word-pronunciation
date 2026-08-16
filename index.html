@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Word Pronunciation</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#17202a;background:#f5f6f8}*{box-sizing:border-box}body{margin:0}.wrap{max-width:760px;margin:auto;padding:28px 18px 50px}.title{font-size:32px;font-weight:750;margin:8px 0 6px}.sub{color:#68717c;margin-bottom:22px}.search{display:flex;gap:10px}.search input{flex:1;min-width:0;font-size:20px;padding:15px 17px;border:1px solid #ccd2d8;border-radius:14px;background:#fff;outline:none}.search input:focus{border-color:#6875f5;box-shadow:0 0 0 3px #6875f522}.search button{border:0;border-radius:14px;padding:0 22px;background:#202632;color:#fff;font-size:17px;font-weight:650}.status{min-height:28px;margin:18px 3px;color:#68717c}.card{background:#fff;border:1px solid #e0e4e8;border-radius:18px;padding:22px;margin-top:14px;box-shadow:0 5px 20px #00000008}.word{font-size:31px;font-weight:750}.phonetic{color:#68717c;font-size:17px;margin-top:4px}.pos{display:inline-block;margin-top:14px;padding:5px 9px;border-radius:8px;background:#eef0ff;color:#3f4ac8;font-size:13px;font-weight:700}.meaning{font-size:18px;line-height:1.55;margin:12px 0}.example{color:#68717c;border-left:3px solid #d9dde2;padding-left:12px;line-height:1.5}.audio{display:flex;align-items:center;gap:12px;margin-top:18px;padding:14px;border:1px solid #e1e5e9;border-radius:14px;background:#fafbfc}.flag{font-size:22px}.audio-info{flex:1;min-width:0}.audio-title{font-weight:700}.audio-meta{font-size:12px;color:#7b838c;margin-top:3px}.audio audio{width:210px}.download{white-space:nowrap;text-decoration:none;color:#3344c7;font-weight:700}.drag{cursor:grab}.drag:active{cursor:grabbing}.empty{text-align:center;padding:40px 10px;color:#68717c}.history{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}.history button{border:1px solid #d8dde2;background:#fff;border-radius:999px;padding:7px 12px;color:#4d5660}.hint{font-size:13px;color:#7a838c;margin-top:15px;line-height:1.5}@media(max-width:620px){.wrap{padding:22px 14px 40px}.title{font-size:28px}.search button{padding:0 17px}.audio{flex-wrap:wrap}.audio audio{width:100%}.download{margin-left:auto}}
+</style>
+</head>
+<body>
+<main class="wrap">
+<div class="title">Word Pronunciation</div>
+<div class="sub">Search a word, listen, download, or drag the audio into another app.</div>
+<form class="search" id="form"><input id="input" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Enter an English word…"><button>Search</button></form>
+<div id="status" class="status"></div>
+<section id="results"></section>
+<div id="history" class="history"></div>
+<div class="hint">Tip: on iPad, try long-pressing the MP3 link or audio card and dragging it toward your destination app. Download remains available when direct cross-app dragging is not supported by Safari.</div>
+</main>
+<script>
+const API='https://api.dictionaryapi.dev/api/v2/entries/en/';
+const $=id=>document.getElementById(id); const input=$('input'), results=$('results'), status=$('status'), history=$('history');
+let recent=JSON.parse(localStorage.getItem('wp-history')||'[]'); renderHistory();
+$('form').addEventListener('submit',e=>{e.preventDefault(); search(input.value.trim())});
+async function search(word){if(!word)return;status.textContent='Searching…';results.innerHTML='';try{const r=await fetch(API+encodeURIComponent(word));if(!r.ok)throw new Error('Word not found');const data=await r.json();render(data);saveHistory(word);status.textContent='';}catch(e){status.textContent='Could not find that word. Try another spelling.'}}
+function saveHistory(word){recent=[word,...recent.filter(x=>x!==word)].slice(0,8);localStorage.setItem('wp-history',JSON.stringify(recent));renderHistory()}
+function renderHistory(){history.innerHTML=recent.map(w=>`<button type="button" data-word="${esc(w)}">${esc(w)}</button>`).join('');history.querySelectorAll('button').forEach(b=>b.onclick=()=>{input.value=b.dataset.word;search(b.dataset.word)})}
+function render(data){const entry=data[0];let html=`<div class="card"><div class="word">${esc(entry.word)}</div>`;const phon=entry.phonetic||(entry.phonetics||[]).find(x=>x.text)?.text;if(phon)html+=`<div class="phonetic">${esc(phon)}</div>`;for(const m of entry.meanings||[]){html+=`<div class="pos">${esc(m.partOfSpeech||'')}</div>`;for(const d of (m.definitions||[]).slice(0,3)){html+=`<div class="meaning">${esc(d.definition||'')}</div>`;if(d.example)html+=`<div class="example">${esc(d.example)}</div>`}}html+='</div>';
+const audios=[];for(const e of data){for(const p of e.phonetics||[]){if(p.audio)audios.push(p)}}const unique=[];for(const a of audios){const u=audioUrl(a.audio);if(u&&!unique.some(x=>x.url===u))unique.push({url:u,text:a.text||''})}if(unique.length){html+=`<div class="card"><div style="font-weight:750;font-size:20px">Pronunciation audio</div>`;unique.forEach((a,i)=>{const label=inferLabel(a.url,i,unique.length);html+=`<div class="audio drag" draggable="true"><div class="flag">${label==='US'?'🇺🇸':'🇬🇧'}</div><div class="audio-info"><div class="audio-title">${label} pronunciation</div><div class="audio-meta">${esc(a.text||'Audio file')}</div></div><audio controls preload="none" src="${esc(a.url)}"></audio><a class="download" href="${esc(a.url)}" download>MP3 ↧</a></div>`});html+=`<div class="hint">The API may provide one or several pronunciation files. US/UK labels are inferred when the source filename contains a locale; otherwise the first files are shown as available pronunciations.</div></div>`}else html+=`<div class="card empty">No downloadable pronunciation audio was returned for this entry.</div>`;results.innerHTML=html}
+function audioUrl(a){if(!a)return '';return a.startsWith('//')?'https:'+a:a}
+function inferLabel(url,i,n){const s=url.toLowerCase();if(/_us|_us_|us\.mp3|us-/.test(s))return'US';if(/_uk|_gb|uk\.mp3|gb\.mp3|uk-/.test(s))return'UK';return i===0?'US':'UK'}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+</script>
+</body>
+</html>
