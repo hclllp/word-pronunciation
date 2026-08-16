@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>iPad Drag Test — Audio</title>
+<style>
+body{margin:0;background:#f5f6f8;color:#17202a;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:720px;margin:auto;padding:28px 16px 60px}h1{font-size:30px;margin:0 0 8px}.sub{color:#68717c;line-height:1.5;margin-bottom:24px}.card{background:#fff;border:1px solid #dfe3e7;border-radius:18px;padding:20px;margin:14px 0;box-shadow:0 4px 16px #00000008}.label{font-size:14px;color:#68717c;margin-bottom:8px}audio{width:100%;margin:8px 0 14px}.filelink{display:inline-block;padding:12px 15px;border-radius:12px;background:#202632;color:#fff;text-decoration:none;font-weight:650}.plain{padding:14px;border:1px dashed #b7bec6;border-radius:12px;margin-top:12px}.log{margin-top:14px;padding:12px;border-radius:10px;background:#f0f2f4;font:12px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;min-height:30px}.note{font-size:13px;color:#68717c;line-height:1.55}.ok{font-weight:700}.test-img{width:180px;height:120px;object-fit:cover;border-radius:12px;display:block}.drop{border:2px dashed #9da7b2;border-radius:16px;padding:28px;text-align:center;margin-top:18px}.drop.over{background:#eef0ff}.small{font-size:12px;color:#7b838c}
+</style>
+</head>
+<body>
+<main class="wrap">
+<h1>iPad Drag Test</h1>
+<div class="sub">This page intentionally tests native-looking HTML resources. The main experiment is the real <code>&lt;audio&gt;</code> element below. Do not use the custom draggable card; simply long-press the audio control itself and try to drag it into ProDraft or another app.</div>
+
+<div class="card">
+<div class="label">TEST A — native &lt;audio&gt;</div>
+<div class="ok">Try long-pressing the audio player itself.</div>
+<audio controls preload="auto" src="https://ssl.gstatic.com/dictionary/static/sounds/20200429/hello--_gb_1.mp3"></audio>
+<div class="note">This source is intentionally the Google-hosted MP3 that you already confirmed can play in your browser.</div>
+</div>
+
+<div class="card">
+<div class="label">TEST B — direct MP3 link</div>
+<a class="filelink" href="https://ssl.gstatic.com/dictionary/static/sounds/20200429/hello--_gb_1.mp3">Open MP3 file</a>
+<div class="plain"><a href="https://ssl.gstatic.com/dictionary/static/sounds/20200429/hello--_gb_1.mp3">Plain &lt;a href="MP3"&gt; link</a></div>
+</div>
+
+<div class="card">
+<div class="label">TEST C — native image</div>
+<img class="test-img" alt="test image" src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a9/Example.jpg/320px-Example.jpg">
+<div class="note">You already observed that images can often be dragged from Safari. This is the control experiment.</div>
+</div>
+
+<div class="card">
+<div class="label">TEST D — video element</div>
+<video controls preload="metadata" width="100%" src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"></video>
+<div class="note">If iPad treats video differently from audio, that distinction is useful.</div>
+</div>
+
+<div class="card">
+<div class="label">TEST E — system drop reception</div>
+<div class="note">On desktop, drag a local MP3 from Files/Explorer into this box. On iPad, try dragging a file from the Files app into this box. If nothing happens on iPad, that is evidence that the OS drag session is not being bridged into this webpage.</div>
+<div class="drop" id="drop">Drop a file here</div>
+<div class="log" id="log">No drop received yet.</div>
+</div>
+
+<div class="card"><div class="label">TEST INSTRUCTIONS</div><div class="note">1. iPad Safari: long-press the actual audio control, not the surrounding card. 2. Try dragging to ProDraft. 3. Repeat with the image and video. 4. Repeat in iPad Edge. 5. On Windows, repeat all tests. 6. For the drop box, use a real local MP3 from Files/Explorer.</div></div>
+</main>
+<script>
+const drop=document.getElementById('drop'),log=document.getElementById('log');
+['dragenter','dragover','dragleave','drop'].forEach(type=>drop.addEventListener(type,e=>e.preventDefault()));
+drop.addEventListener('dragover',()=>drop.classList.add('over'));drop.addEventListener('dragleave',()=>drop.classList.remove('over'));drop.addEventListener('drop',e=>{drop.classList.remove('over');const dt=e.dataTransfer;let out='types: '+Array.from(dt.types).join(', ')+'\n';out+='items: '+Array.from(dt.items).map(i=>i.kind+':'+i.type).join(', ')+'\n';out+='files: '+dt.files.length;if(dt.files.length)out+='\n'+Array.from(dt.files).map(f=>f.name+' / '+f.type+' / '+f.size+' bytes').join('\n');log.textContent=out});
+</script>
+</body>
+</html>
