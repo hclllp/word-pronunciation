@@ -2,9 +2,11 @@ import { DurableObject } from "cloudflare:workers";
 
 const STATS_NAME = "global";
 const SINGAPORE_TZ = "Asia/Singapore";
+const MAIL_ENDPOINT = "https://dedicated-meeting-que-ips.trycloudflare.com/mail/send";
+const ALERT_THRESHOLD = 800;
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders() });
@@ -34,10 +36,13 @@ export default {
     const stats = env.API_STATS.getByName(STATS_NAME);
 
     try {
-      await stats.fetch(new Request('https://stats.local/record', {
+      // Statistics must never be allowed to block a dictionary lookup.
+      // The previous implementation awaited this Durable Object request,
+      // so a DO/binding problem left the UI stuck on "Searching…".
+      ctx.waitUntil(stats.fetch(new Request('https://stats.local/record', {
         method: 'POST',
         body: JSON.stringify({ api: 'dictionary' })
-      }));
+      })).catch(error => console.error('Dictionary stats recording failed:', error)));
 
       let response = await fetch(dictionaryUrl, { cf: { cacheTtl: 0, cacheEverything: false } });
       let data = await response.json();
@@ -45,10 +50,10 @@ export default {
 
       let source = 'collegiate';
       if (!Array.isArray(data) || !data.length || typeof data[0] === 'string') {
-        await stats.fetch(new Request('https://stats.local/record', {
+        ctx.waitUntil(stats.fetch(new Request('https://stats.local/record', {
           method: 'POST',
           body: JSON.stringify({ api: 'school' })
-        }));
+        })).catch(error => console.error('School stats recording failed:', error)));
         response = await fetch(schoolUrl, { cf: { cacheTtl: 0, cacheEverything: false } });
         data = await response.json();
         source = 'school';
@@ -59,6 +64,7 @@ export default {
 
       return json({ source, entries: data.slice(0, 4) });
     } catch (error) {
+      console.error('Lookup failed:', error);
       return json({ error: 'Upstream request failed' }, 502);
     }
   }
@@ -69,9 +75,7 @@ export class ApiStats extends DurableObject {
     super(ctx, env);
     this.ctx.blockConcurrencyWhile(async () => {
       const stats = await this.ctx.storage.get('today');
-      if (!stats) {
-        await this.resetForToday();
-      }
+      if (!stats) await this.resetForToday();
     });
   }
 
@@ -85,11 +89,21 @@ export class ApiStats extends DurableObject {
       if (body.api !== 'dictionary' && body.api !== 'school') {
         return new Response('bad api', { status: 400 });
       }
+
       const stats = await this.ctx.storage.get('today');
       const hour = singaporeHour();
       stats[body.api] += 1;
       stats.hourly[hour][body.api] += 1;
+
+      // Only notify once when each API crosses 800 for the current day.
+      const alertKey = `${body.api}AlertSent`;
+      const shouldAlert = stats[body.api] >= ALERT_THRESHOLD && !stats[alertKey];
+      if (shouldAlert) stats[alertKey] = true;
       await this.ctx.storage.put('today', stats);
+
+      if (shouldAlert) {
+        await sendQuotaAlert(body.api, stats[body.api], stats.date);
+      }
       return jsonInternal({ ok: true });
     }
 
@@ -128,9 +142,28 @@ export class ApiStats extends DurableObject {
       date: singaporeDate(),
       dictionary: 0,
       school: 0,
+      dictionaryAlertSent: false,
+      schoolAlertSent: false,
       hourly
     });
     await this.ctx.storage.setAlarm(nextSingaporeMidnight());
+  }
+}
+
+async function sendQuotaAlert(api, count, date) {
+  const apiName = api === 'dictionary' ? 'Dictionary API' : 'School Dictionary API';
+  const subject = `${apiName} daily request alert`;
+  const body = `${apiName} has reached ${count} requests today (${date}, Asia/Singapore). The alert threshold is ${ALERT_THRESHOLD}.`;
+  const url = `${MAIL_ENDPOINT}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  try {
+    const response = await fetch(url, { method: 'GET' });
+    if (!response.ok) console.error('Quota alert mail failed with HTTP', response.status);
+    else {
+      const result = await response.json().catch(() => null);
+      if (!result?.ok) console.error('Quota alert mail failed:', result?.error || 'unknown error');
+    }
+  } catch (error) {
+    console.error('Quota alert mail request failed:', error);
   }
 }
 
