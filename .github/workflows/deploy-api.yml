@@ -1,0 +1,44 @@
+name: Deploy dictionary API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - '.github/workflows/deploy-api.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Wrangler
+        run: npm install --global wrangler@latest
+      - name: Authenticate Wrangler
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: wrangler whoami
+      - name: Configure Merriam-Webster secrets
+        env:
+          MW_DICTIONARY_KEY: ${{ secrets.MW_DICTIONARY_KEY }}
+          MW_SCHOOL_KEY: ${{ secrets.MW_SCHOOL_KEY }}
+        run: |
+          printf '%s' "$MW_DICTIONARY_KEY" | wrangler secret put MW_DICTIONARY_KEY
+          printf '%s' "$MW_SCHOOL_KEY" | wrangler secret put MW_SCHOOL_KEY
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: wrangler deploy
