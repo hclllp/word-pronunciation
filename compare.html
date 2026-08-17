@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Word Pronunciation Compare</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#18202a;background:#f5f6f8}*{box-sizing:border-box}body{margin:0}.app{max-width:900px;margin:auto;padding:18px 14px 60px}.top{position:sticky;top:0;z-index:5;background:#f5f6f8ee;backdrop-filter:blur(12px);padding:4px 0 14px}.title{font-size:27px;font-weight:780;margin:4px 0}.subtitle{font-size:13px;color:#6d7580;margin-bottom:12px}.toolbar{display:flex;gap:8px}.toolbar input{flex:1;min-width:0;border:1px solid #d7dce1;border-radius:12px;background:white;padding:12px 14px;font-size:16px;outline:none}.toolbar button,.searchBtn{border:0;border-radius:12px;padding:0 16px;background:#202632;color:white;font-size:20px;font-weight:700}.toolbar button{min-width:48px}.cards{display:flex;flex-direction:column;gap:12px}.card{background:#fff;border:1px solid #dfe3e7;border-radius:16px;padding:15px;box-shadow:0 3px 14px #00000008}.head{display:flex;align-items:center;gap:8px;margin-bottom:8px}.word{font-size:24px;font-weight:760;flex:1;overflow-wrap:anywhere}.close{width:32px;height:32px;border:0;border-radius:50%;background:#eef0f2;color:#59616b;font-size:20px;line-height:1}.loading{color:#747d87}.error{color:#a32d2d;background:#fff1f0;border-radius:10px;padding:10px}.phonetics{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px}.pron{display:flex;align-items:center;gap:7px;border:1px solid #dfe3e7;border-radius:11px;padding:7px 10px}.pron button{border:0;background:transparent;font-size:17px;cursor:pointer}.accent{font-size:12px;color:#69727c;font-weight:700}.ipa{font-size:15px}.defs{margin:0;padding-left:20px}.defs li{margin:7px 0;line-height:1.45}.pos{font-size:12px;color:#68717c;font-weight:750;text-transform:uppercase;letter-spacing:.04em;margin-top:10px}.empty{padding:34px 15px;text-align:center;color:#7a828c}.hint{font-size:12px;color:#7a828c;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="app">
+<header class="top">
+<div class="title">Word Pronunciation Compare</div>
+<div class="subtitle">Search words and keep every result open for side-by-side pronunciation and definition comparison.</div>
+<div class="toolbar"><input id="input" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Enter an English word…"><button id="add" aria-label="Add word">＋</button></div>
+<div class="hint">Press Enter or tap ＋. Existing words stay until you press ×.</div>
+</header>
+<main id="cards" class="cards"></main>
+</div>
+<script>
+const input=document.getElementById('input'),add=document.getElementById('add'),cards=document.getElementById('cards');
+const state=new Map();
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function renderEmpty(){if(!cards.children.length)cards.innerHTML='<div class="empty">Search a word to create the first comparison card.</div>'}
+function play(url){if(!url)return;const a=new Audio(url);a.play().catch(()=>window.open(url,'_blank'))}
+function addWord(raw){const word=raw.trim();if(!word)return;const key=word.toLowerCase();input.value='';if(state.has(key)){document.getElementById('card-'+state.get(key)).scrollIntoView({behavior:'smooth',block:'center'});return}const id=Math.random().toString(36).slice(2);state.set(key,id);if(!cards.children.length)cards.innerHTML='';const el=document.createElement('section');el.className='card';el.id='card-'+id;el.innerHTML='<div class="head"><div class="word">'+esc(word)+'</div><button class="close" title="Remove">×</button></div><div class="loading">Searching…</div>';el.querySelector('.close').onclick=()=>{state.delete(key);el.remove();renderEmpty()};cards.appendChild(el);el.scrollIntoView({behavior:'smooth',block:'center'});fetchWord(word,el)}
+async function fetchWord(word,el){try{const r=await fetch('https://api.dictionaryapi.dev/api/v2/entries/en/'+encodeURIComponent(word));if(!r.ok)throw new Error(r.status===404?'Word not found':'HTTP '+r.status);const data=await r.json();const entry=data[0];const phonetics=(entry.phonetics||[]).filter(p=>p.audio||p.text);let html='<div class="phonetics">';if(!phonetics.length)html+='<span class="loading">No pronunciation audio returned.</span>';phonetics.forEach((p,i)=>{const label=p.audio?(p.audio.includes('-us')?'US':p.audio.includes('-uk')?'UK':'Audio'):'IPA';html+='<div class="pron">'+(p.audio?'<button title="Play" data-audio="'+esc(p.audio)+'">▶︎</button>':'')+(p.text?'<span class="ipa">'+esc(p.text)+'</span>':'')+'<span class="accent">'+label+'</span></div>'});html+='</div>';const meanings=entry.meanings||[];meanings.forEach(m=>{html+='<div class="pos">'+esc(m.partOfSpeech||'')+'</div><ol class="defs">';(m.definitions||[]).slice(0,5).forEach(d=>{html+='<li>'+esc(d.definition);if(d.example)html+='<div class="hint">Example: '+esc(d.example)+'</div>';html+='</li>'});html+='</ol>'});el.querySelector('.loading').outerHTML=html;el.querySelectorAll('[data-audio]').forEach(b=>b.onclick=()=>play(b.dataset.audio))}catch(e){el.querySelector('.loading').outerHTML='<div class="error">'+esc(e.message)+'</div>'}}
+add.onclick=()=>addWord(input.value);input.addEventListener('keydown',e=>{if(e.key==='Enter')addWord(input.value)});renderEmpty();
+</script>
+</body>
+</html>
