@@ -13,12 +13,17 @@ export default {
     }
 
     if (url.pathname === '/stats') {
-      const stub = env.API_STATS.getByName(STATS_NAME);
-      const response = await stub.fetch(new Request('https://stats.local/read'));
-      return new Response(response.body, {
-        status: response.status,
-        headers: { ...corsHeaders(), 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }
-      });
+      try {
+        const stub = env.API_STATS.getByName(STATS_NAME);
+        const response = await stub.fetch(new Request('https://stats.local/read'));
+        return new Response(response.body, {
+          status: response.status,
+          headers: { ...corsHeaders(), 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }
+        });
+      } catch (error) {
+        console.error('Stats read failed:', error);
+        return json({ error: 'Stats service unavailable' }, 503);
+      }
     }
 
     if (url.pathname !== '/lookup') {
@@ -33,35 +38,31 @@ export default {
     const encoded = encodeURIComponent(word);
     const dictionaryUrl = `https://www.dictionaryapi.com/api/v3/references/collegiate/json/${encoded}?key=${encodeURIComponent(env.MW_DICTIONARY_KEY)}`;
     const schoolUrl = `https://www.dictionaryapi.com/api/v3/references/sd4/json/${encoded}?key=${encodeURIComponent(env.MW_SCHOOL_KEY)}`;
-    const stats = env.API_STATS.getByName(STATS_NAME);
 
     try {
-      // Statistics must never be allowed to block a dictionary lookup.
-      // The previous implementation awaited this Durable Object request,
-      // so a DO/binding problem left the UI stuck on "Searching…".
-      ctx.waitUntil(stats.fetch(new Request('https://stats.local/record', {
-        method: 'POST',
-        body: JSON.stringify({ api: 'dictionary' })
-      })).catch(error => console.error('Dictionary stats recording failed:', error)));
-
+      // Do not touch the statistics service until the dictionary lookup has completed.
+      // A statistics/binding problem must never prevent a word lookup from working.
       let response = await fetch(dictionaryUrl, { cf: { cacheTtl: 0, cacheEverything: false } });
       let data = await response.json();
       if (!response.ok) return json({ error: 'Merriam-Webster request failed', status: response.status }, response.status);
 
       let source = 'collegiate';
+      let usedSchool = false;
       if (!Array.isArray(data) || !data.length || typeof data[0] === 'string') {
-        ctx.waitUntil(stats.fetch(new Request('https://stats.local/record', {
-          method: 'POST',
-          body: JSON.stringify({ api: 'school' })
-        })).catch(error => console.error('School stats recording failed:', error)));
         response = await fetch(schoolUrl, { cf: { cacheTtl: 0, cacheEverything: false } });
         data = await response.json();
         source = 'school';
+        usedSchool = true;
       }
       if (!Array.isArray(data) || !data.length || typeof data[0] === 'string') {
+        // Still count the actual Dictionary API request; School is also counted if it was called.
+        recordUsageAfterLookup(ctx, env, usedSchool ? ['dictionary', 'school'] : ['dictionary']);
         return json({ error: 'Word not found', suggestions: Array.isArray(data) ? data.slice(0, 8) : [] }, 404);
       }
 
+      // The response is ready first. Usage accounting is fire-and-forget and therefore
+      // cannot add latency to the lookup or make the lookup fail.
+      recordUsageAfterLookup(ctx, env, usedSchool ? ['dictionary', 'school'] : ['dictionary']);
       return json({ source, entries: data.slice(0, 4) });
     } catch (error) {
       console.error('Lookup failed:', error);
@@ -69,6 +70,22 @@ export default {
     }
   }
 };
+
+function recordUsageAfterLookup(ctx, env, apis) {
+  // Obtain the Durable Object stub only after the upstream lookup is complete.
+  // Even if the binding is unavailable, the already-completed lookup remains successful.
+  try {
+    const stats = env.API_STATS.getByName(STATS_NAME);
+    for (const api of apis) {
+      ctx.waitUntil(stats.fetch(new Request('https://stats.local/record', {
+        method: 'POST',
+        body: JSON.stringify({ api })
+      })).catch(error => console.error(`${api} stats recording failed:`, error)));
+    }
+  } catch (error) {
+    console.error('Stats binding unavailable:', error);
+  }
+}
 
 export class ApiStats extends DurableObject {
   constructor(ctx, env) {
@@ -95,7 +112,6 @@ export class ApiStats extends DurableObject {
       stats[body.api] += 1;
       stats.hourly[hour][body.api] += 1;
 
-      // Only notify once when each API crosses 800 for the current day.
       const alertKey = `${body.api}AlertSent`;
       const shouldAlert = stats[body.api] >= ALERT_THRESHOLD && !stats[alertKey];
       if (shouldAlert) stats[alertKey] = true;
