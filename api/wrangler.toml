@@ -4,3 +4,11 @@ compatibility_date = "2026-08-17"
 
 [secrets]
 required = ["MW_DICTIONARY_KEY", "MW_SCHOOL_KEY"]
+
+[[durable_objects.bindings]]
+name = "API_STATS"
+class_name = "ApiStats"
+
+[exports.ApiStats]
+type = "durable-object"
+storage = "sqlite"
