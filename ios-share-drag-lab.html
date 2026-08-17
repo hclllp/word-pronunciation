@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>iOS Share & Drag Lab</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#17202a;background:#f5f6f8}*{box-sizing:border-box}body{margin:0}.wrap{max-width:760px;margin:auto;padding:26px 16px 60px}h1{font-size:29px;margin:0 0 8px}.sub{color:#68717c;line-height:1.5}.card{background:#fff;border:1px solid #dfe3e7;border-radius:18px;padding:20px;margin:15px 0;box-shadow:0 4px 16px #00000008}.title{font-size:19px;font-weight:750;margin-bottom:7px}.label{font-size:13px;color:#68717c;margin-bottom:8px}.status{padding:12px;border-radius:10px;background:#f0f2f4;font:12px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;line-height:1.55}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}button{border:0;border-radius:12px;padding:12px 15px;background:#202632;color:#fff;font-size:15px;font-weight:650}button.secondary{background:#e9ecef;color:#202632}button:disabled{opacity:.45}audio{width:100%;margin-top:10px}.drag-item{padding:14px;border:1px solid #d9dee3;border-radius:13px;margin-top:10px;user-select:none;-webkit-user-select:none;-webkit-user-drag:element}.drag-item img{width:54px;height:54px;object-fit:cover;border-radius:10px;vertical-align:middle;margin-right:10px}.drop{border:2px dashed #9da7b2;border-radius:15px;padding:28px;text-align:center;margin-top:12px}.small{font-size:12px;color:#7b838c;line-height:1.5}.success{background:#edf8f0}.fail{background:#fff1f0}.warn{background:#fff8e7}
+</style>
+</head>
+<body>
+<main class="wrap">
+<h1>iOS Share & Drag Lab</h1>
+<p class="sub">This page tests the two remaining practical routes: (A) Web Share with a real MP3 File and (B) native WebKit-style drag sources using an anchor/image combination. It intentionally does not rely on custom DataTransfer File injection.</p>
+
+<section class="card">
+<div class="label">A — MP3 preparation</div>
+<div class="title">hello / UK pronunciation</div>
+<audio id="audio" controls preload="auto" src="https://ssl.gstatic.com/dictionary/static/sounds/20200429/hello--_gb_1.mp3"></audio>
+<div class="small" style="margin-top:8px">The source is the Google-hosted MP3 that you already confirmed plays correctly.</div>
+<div class="actions"><button id="prepare">Prepare MP3 File</button></div>
+<div class="status" id="prepareStatus">Not prepared.</div>
+</section>
+
+<section class="card">
+<div class="label">B — Web Share Level 2</div>
+<div class="title">Share the actual MP3 File</div>
+<p class="small">This does not use the clipboard and does not pass a URL. It asks iPadOS for the native Share Sheet and supplies a File object. If ProDraft appears in the Share Sheet, select it and see whether it receives a real MP3.</p>
+<div class="actions"><button id="share" disabled>Share MP3 File</button><button id="shareText" class="secondary">Check Web Share</button></div>
+<div class="status" id="shareStatus">Prepare the MP3 first.</div>
+</section>
+
+<section class="card">
+<div class="label">C — native link + image drag</div>
+<div class="title">Try dragging the image/link itself</div>
+<a id="nativeLink" href="https://ssl.gstatic.com/dictionary/static/sounds/20200429/hello--_gb_1.mp3">
+<div class="drag-item"><img alt="MP3" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect width='100' height='100' rx='18' fill='%23202632'/%3E%3Ctext x='50' y='57' text-anchor='middle' font-family='Arial' font-size='25' fill='white'%3EMP3%3C/text%3E%3C/svg%3E"><span><strong>hello.mp3</strong><br><span class="small">This is an actual &lt;a&gt; pointing to the MP3.</span></span></div>
+</a>
+<p class="small">Test 1: long-press the image. Test 2: long-press the filename. Compare the result with your previous plain MP3 link test.</p>
+</section>
+
+<section class="card">
+<div class="label">D — download attribute</div>
+<div class="title">Anchor + download + image</div>
+<a href="https://ssl.gstatic.com/dictionary/static/sounds/20200429/hello--_gb_1.mp3" download="hello.mp3">
+<div class="drag-item"><img alt="MP3 download" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect width='100' height='100' rx='18' fill='%23444c57'/%3E%3Ctext x='50' y='55' text-anchor='middle' font-family='Arial' font-size='22' fill='white'%3EMP3%3C/text%3E%3C/svg%3E"><span><strong>hello.mp3 — download</strong><br><span class="small">Same MP3 URL, but with download="hello.mp3".</span></span></div>
+</a>
+</section>
+
+<section class="card">
+<div class="label">E — Blob URL + image</div>
+<div class="title">Fetch first, then make a blob: URL</div>
+<div class="actions"><button id="blobPrepare">Create Blob URL</button></div>
+<div id="blobSource" class="small">No Blob URL yet.</div>
+<div id="blobLinkWrap"></div>
+</section>
+
+<section class="card">
+<div class="label">F — native image control</div>
+<div class="title">Control experiment</div>
+<img alt="native draggable image" width="180" height="120" style="object-fit:cover;border-radius:12px" src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a9/Example.jpg/320px-Example.jpg">
+<p class="small">You previously observed that images can be dragged from iPad Safari. This gives us a control group.</p>
+</section>
+
+<section class="card">
+<div class="label">G — receive a system drag</div>
+<div id="drop" class="drop">Try dragging a file from Files into this box</div>
+<div class="status" id="dropStatus">No drop received.</div>
+</section>
+</main>
+<script>
+const MP3='https://ssl.gstatic.com/dictionary/static/sounds/20200429/hello--_gb_1.mp3';
+let preparedFile=null,blobUrl=null;
+const $=id=>document.getElementById(id);
+function set(id,text,kind=''){const el=$(id);el.textContent=text;el.className='status '+kind}
+async function makeFile(){
+ set('prepareStatus','Fetching MP3 bytes…','warn');
+ try{const r=await fetch(MP3);if(!r.ok)throw new Error('HTTP '+r.status);const b=await r.blob();preparedFile=new File([b],'hello.mp3',{type:b.type||'audio/mpeg',lastModified:Date.now()});$('share').disabled=false;set('prepareStatus',`READY\nname: ${preparedFile.name}\ntype: ${preparedFile.type}\nsize: ${preparedFile.size} bytes`,'success')}catch(e){preparedFile=null;$('share').disabled=true;set('prepareStatus','FAILED: '+e.name+' — '+e.message,'fail')}}
+$('prepare').onclick=makeFile;
+$('shareText').onclick=()=>{const can=!!navigator.share;let out='navigator.share: '+can+'\n';if(navigator.canShare){out+='navigator.canShare: '+navigator.canShare({files:preparedFile?[preparedFile]:[]})+'\n';out+='canShare MP3: '+(preparedFile?navigator.canShare({files:[preparedFile]}):'prepare first')+'\n'}else out+='navigator.canShare: unavailable\n';set('shareStatus',out,can?'':'fail')};
+$('share').onclick=async()=>{if(!preparedFile)return;try{if(!navigator.share)throw new Error('Web Share is not available');if(navigator.canShare&&!navigator.canShare({files:[preparedFile]}))throw new Error('navigator.canShare() rejected the MP3 File');await navigator.share({files:[preparedFile],title:'hello.mp3',text:'English pronunciation'});set('shareStatus','SHARE COMPLETED\nCheck the receiving app: did it receive a real hello.mp3 file?','success')}catch(e){if(e.name==='AbortError')set('shareStatus','Share sheet was cancelled.','warn');else set('shareStatus','FAILED: '+e.name+' — '+e.message,'fail')}};
+$('blobPrepare').onclick=async()=>{try{const r=await fetch(MP3);if(!r.ok)throw Error('HTTP '+r.status);const b=await r.blob();if(blobUrl)URL.revokeObjectURL(blobUrl);blobUrl=URL.createObjectURL(b);$('blobSource').textContent='Blob URL created: '+blobUrl;$('blobLinkWrap').innerHTML='<a href="'+blobUrl+'"><div class="drag-item"><img alt="Blob MP3" src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'%3E%3Crect width=\'100\' height=\'100\' rx=\'18\' fill=\'%23202632\'/%3E%3Ctext x=\'50\' y=\'57\' text-anchor=\'middle\' font-family=\'Arial\' font-size=\'25\' fill=\'white\'%3EMP3%3C/text%3E%3C/svg%3E"><span><strong>hello.mp3 — Blob URL</strong><br><span class="small">Anchor href is now blob:…</span></span></div></a>'}catch(e){$('blobSource').textContent='FAILED: '+e.message}};
+const drop=$('drop');['dragenter','dragover'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.style.background='#eef0ff'}));['dragleave','drop'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.style.background=''}));drop.addEventListener('drop',e=>{const dt=e.dataTransfer;let s='types: '+Array.from(dt.types).join(', ')+'\nitems: '+Array.from(dt.items).map(i=>i.kind+':'+i.type).join(', ')+'\nfiles: '+dt.files.length;if(dt.files.length)s+='\n'+Array.from(dt.files).map(f=>f.name+' / '+f.type+' / '+f.size+' bytes').join('\n');set('dropStatus',s,'success')});
+</script>
+</body>
+</html>
