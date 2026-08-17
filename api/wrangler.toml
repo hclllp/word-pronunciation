@@ -1,0 +1,6 @@
+name = "word-pronunciation-api"
+main = "worker.js"
+compatibility_date = "2026-08-17"
+
+[secrets]
+required = ["MW_DICTIONARY_KEY", "MW_SCHOOL_KEY"]
