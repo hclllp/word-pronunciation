@@ -1,0 +1,179 @@
+name: Apply touch drag diagnostics and rotating search hints
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[touch-patch]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch compare.html
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('compare.html')
+          s = p.read_text(encoding='utf-8')
+          marker = '/* touch-drag-diagnostics-v3 */'
+          if marker in s:
+              print('Patch already present')
+              raise SystemExit(0)
+
+          s = s.replace(
+              '.search-hint{padding-top:3px}',
+              '.search-hint{padding-top:3px;position:relative;min-height:18px;transition:opacity .22s ease}.search-hint.fade{opacity:0}'
+          )
+
+          old = '<div class="search-hint">可使用逗号或空格分隔进行批量查询</div>'
+          new = '<div class="search-hint" id="search-hint">Search word ...</div>'
+          if old not in s:
+              raise SystemExit('search hint markup not found')
+          s = s.replace(old, new, 1)
+
+          idx = s.find('function createSearch(){')
+          if idx < 0:
+              raise SystemExit('createSearch not found')
+
+          rotator = r'''/* touch-drag-diagnostics-v3 */
+          const SEARCH_HINTS=[
+            'Search word ...',
+            '不知道怎么用，可以点点下方的example',
+            '可同时输入多个单词进行一键批量查询',
+            '长按卡片可以上下拖动调整位置',
+            '单击卡片展开详情介绍'
+          ];
+          function startSearchHintRotator(){
+            const h=document.getElementById('search-hint');
+            if(!h)return;
+            let i=0;
+            h.textContent=SEARCH_HINTS[0];
+            setInterval(()=>{
+              h.classList.add('fade');
+              setTimeout(()=>{
+                i=(i+1)%SEARCH_HINTS.length;
+                h.textContent=SEARCH_HINTS[i];
+                h.classList.remove('fade');
+              },220);
+            },3000);
+          }
+          '''
+          s = s[:idx] + rotator + s[idx:]
+
+          m = re.search(r'function setupDrag\\(el\\)\\{.*?(?=function [A-Za-z_$])', s, re.S)
+          if not m:
+              raise SystemExit('setupDrag function not found')
+
+          drag = r'''function setupDrag(el){
+            const LONG_PRESS=500, MOVE_CANCEL=8;
+            let timer=null,dragging=false,startX=0,startY=0,lastX=0,lastY=0;
+            let ghost=null,placeholder=null,rect=null;
+            const log=(event,extra={})=>console.debug('[touch-drag]',event,{word:el.dataset.word,dragging,...extra});
+            const clearTimer=()=>{if(timer){clearTimeout(timer);timer=null}};
+            const cleanup=(reason)=>{
+              clearTimer();
+              if(!dragging)return;
+              log('END',{reason,scrollY:window.scrollY});
+              dragging=false;
+              document.body.classList.remove('reordering');
+              document.removeEventListener('pointermove',onMove,true);
+              document.removeEventListener('pointerup',onUp,true);
+              document.removeEventListener('pointercancel',onCancel,true);
+              if(ghost){ghost.remove();ghost=null}
+              if(placeholder){placeholder.replaceWith(el);placeholder=null}
+              el.style.display='';
+              el._dragHandled=true;
+              setTimeout(()=>{el._dragHandled=false},0);
+            };
+            const onUp=()=>cleanup('pointerup');
+            const onCancel=()=>cleanup('pointercancel');
+            const movePlaceholder=(y)=>{
+              const siblings=[...cards.querySelectorAll('.card[data-word]')].filter(x=>x!==el&&x!==placeholder);
+              let target=null;
+              for(const c of siblings){
+                const r=c.getBoundingClientRect();
+                if(y<r.top+r.height/2){target=c;break}
+              }
+              if(target)cards.insertBefore(placeholder,target);
+              else cards.insertBefore(placeholder,document.querySelector('.search-card'));
+            };
+            const onMove=e=>{
+              if(!dragging)return;
+              e.preventDefault();
+              e.stopPropagation();
+              lastX=e.clientX;lastY=e.clientY;
+              if(ghost)ghost.style.transform=`translate3d(${lastX-rect.left}px,${lastY-rect.top}px,0)`;
+              movePlaceholder(lastY);
+              const hit=document.elementFromPoint(lastX,lastY);
+              log('MOVE',{x:lastX,y:lastY,scrollY:window.scrollY,target:hit?.dataset?.word||hit?.className||null,ghostTop:ghost?.getBoundingClientRect().top});
+            };
+            const begin=()=>{
+              if(dragging)return;
+              dragging=true;
+              rect=el.getBoundingClientRect();
+              placeholder=document.createElement('div');
+              placeholder.className='drag-placeholder';
+              placeholder.style.height=rect.height+'px';
+              placeholder.style.flex='0 0 '+rect.height+'px';
+              el.parentNode.insertBefore(placeholder,el);
+              ghost=el.cloneNode(true);
+              ghost.classList.add('dragging');
+              ghost.style.position='fixed';
+              ghost.style.left=rect.left+'px';
+              ghost.style.top=rect.top+'px';
+              ghost.style.width=rect.width+'px';
+              ghost.style.height=rect.height+'px';
+              ghost.style.pointerEvents='none';
+              ghost.style.transform='translate3d(0,0,0)';
+              document.body.appendChild(ghost);
+              el.style.display='none';
+              document.body.classList.add('reordering');
+              log('START',{x:lastX,y:lastY,rect:{top:rect.top,left:rect.left,width:rect.width,height:rect.height},scrollY:window.scrollY});
+              document.addEventListener('pointermove',onMove,{capture:true,passive:false});
+              document.addEventListener('pointerup',onUp,{capture:true,passive:false});
+              document.addEventListener('pointercancel',onCancel,{capture:true,passive:false});
+            };
+            el.addEventListener('pointerdown',e=>{
+              if(e.pointerType==='mouse'&&e.button!==0)return;
+              if(e.target.closest('button'))return;
+              startX=lastX=e.clientX;startY=lastY=e.clientY;clearTimer();
+              log('DOWN',{x:startX,y:startY,pointerType:e.pointerType,scrollY:window.scrollY});
+              timer=setTimeout(()=>{
+                if(Math.hypot(lastX-startX,lastY-startY)>MOVE_CANCEL){log('LONG_PRESS_CANCEL',{dx:lastX-startX,dy:lastY-startY});return;}
+                begin();
+              },LONG_PRESS);
+              const cancelBeforeDrag=ev=>{
+                if(dragging)return;
+                const dx=ev.clientX-startX,dy=ev.clientY-startY;
+                if(Math.hypot(dx,dy)>MOVE_CANCEL){clearTimer();document.removeEventListener('pointermove',cancelBeforeDrag,true);log('PRESS_CANCEL',{dx,dy});}
+              };
+              document.addEventListener('pointermove',cancelBeforeDrag,{capture:true,passive:true});
+              setTimeout(()=>document.removeEventListener('pointermove',cancelBeforeDrag,true),LONG_PRESS+50);
+            },{passive:true});
+          }
+          '''
+          s = s[:m.start()] + drag + s[m.end():]
+
+          if 'startSearchHintRotator();' not in s:
+              s = s.replace('createSearch();', 'createSearch();startSearchHintRotator();', 1)
+
+          p.write_text(s, encoding='utf-8')
+          print('Patched compare.html')
+          PY
+
+      - name: Commit patch and remove temporary workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add compare.html
+          git commit -m 'Fix touch drag diagnostics and add rotating hints [touch-patch]' || true
+          git push
