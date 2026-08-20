@@ -40,29 +40,58 @@ export default {
     const schoolUrl = `https://www.dictionaryapi.com/api/v3/references/sd4/json/${encoded}?key=${encodeURIComponent(env.MW_SCHOOL_KEY)}`;
 
     try {
-      // Do not touch the statistics service until the dictionary lookup has completed.
-      // A statistics/binding problem must never prevent a word lookup from working.
-      let response = await fetch(dictionaryUrl, { cf: { cacheTtl: 0, cacheEverything: false } });
-      let data = await response.json();
-      if (!response.ok) return json({ error: 'Merriam-Webster request failed', status: response.status }, response.status);
+      let dictionaryCalled = false;
+      let schoolCalled = false;
+      let data = null;
 
+      // First try the full Collegiate Dictionary API.
+      // A 200 response alone is NOT considered success: MW can return an array
+      // containing a technically valid object that has no usable definitions.
+      try {
+        dictionaryCalled = true;
+        const response = await fetch(dictionaryUrl, { cf: { cacheTtl: 0, cacheEverything: false } });
+        if (response.ok) {
+          const candidate = await response.json();
+          if (hasUsableEntry(candidate)) data = candidate;
+        } else {
+          console.warn('Dictionary API returned HTTP', response.status, 'for', word);
+        }
+      } catch (error) {
+        console.warn('Dictionary API request failed for', word, error);
+      }
+
+      // Fallback whenever Dictionary did not produce a genuinely usable entry:
+      // HTTP error, network error, empty result, suggestion-only result, or an
+      // entry without definitions. This is the case that previously caused words
+      // such as "photo" to stop at the Dictionary result instead of reaching SD.
       let source = 'collegiate';
-      let usedSchool = false;
-      if (!Array.isArray(data) || !data.length || typeof data[0] === 'string') {
-        response = await fetch(schoolUrl, { cf: { cacheTtl: 0, cacheEverything: false } });
-        data = await response.json();
+      if (!data) {
+        try {
+          schoolCalled = true;
+          const response = await fetch(schoolUrl, { cf: { cacheTtl: 0, cacheEverything: false } });
+          if (response.ok) {
+            const candidate = await response.json();
+            if (hasUsableEntry(candidate)) data = candidate;
+          } else {
+            console.warn('School Dictionary API returned HTTP', response.status, 'for', word);
+          }
+        } catch (error) {
+          console.warn('School Dictionary API request failed for', word, error);
+        }
         source = 'school';
-        usedSchool = true;
-      }
-      if (!Array.isArray(data) || !data.length || typeof data[0] === 'string') {
-        // Still count the actual Dictionary API request; School is also counted if it was called.
-        recordUsageAfterLookup(ctx, env, usedSchool ? ['dictionary', 'school'] : ['dictionary']);
-        return json({ error: 'Word not found', suggestions: Array.isArray(data) ? data.slice(0, 8) : [] }, 404);
       }
 
-      // The response is ready first. Usage accounting is fire-and-forget and therefore
-      // cannot add latency to the lookup or make the lookup fail.
-      recordUsageAfterLookup(ctx, env, usedSchool ? ['dictionary', 'school'] : ['dictionary']);
+      const usedApis = [];
+      if (dictionaryCalled) usedApis.push('dictionary');
+      if (schoolCalled) usedApis.push('school');
+      if (usedApis.length) recordUsageAfterLookup(ctx, env, usedApis);
+
+      if (!data) {
+        const suggestions = [];
+        return json({ error: 'Word not found', suggestions }, 404);
+      }
+
+      // Usage accounting is fire-and-forget and cannot add latency to the lookup.
       return json({ source, entries: data.slice(0, 4) });
     } catch (error) {
       console.error('Lookup failed:', error);
@@ -71,9 +100,18 @@ export default {
   }
 };
 
+function hasUsableEntry(data) {
+  if (!Array.isArray(data) || !data.length) return false;
+  return data.some(entry => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+    // The frontend needs a real dictionary entry with definition data.
+    // Suggestion strings and incomplete objects must therefore trigger SD fallback.
+    if (!Array.isArray(entry.def) || entry.def.length === 0) return false;
+    return true;
+  });
+}
+
 function recordUsageAfterLookup(ctx, env, apis) {
-  // Obtain the Durable Object stub only after the upstream lookup is complete.
-  // Even if the binding is unavailable, the already-completed lookup remains successful.
   try {
     const stats = env.API_STATS.getByName(STATS_NAME);
     for (const api of apis) {
