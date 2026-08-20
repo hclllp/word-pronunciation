@@ -1,0 +1,47 @@
+name: Apply audio WAV conversion fix
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, 'Apply audio WAV conversion fix') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch download path
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('compare.html')
+          s = p.read_text(encoding='utf-8')
+
+          pattern = r"async function downloadAudio\(url,word,btn,el\)\{.*?\}\nfunction showToast"
+          replacement = '''async function downloadAudio(url,word,btn,el){const old=btn.textContent;btn.textContent='处理中…';try{let m=el._audio;if(!m||m.url!==url)await prepareAudio(url,el),m=el._audio;if(!m.buffer)throw Error('音频解码失败');let buffer=m.buffer;if(m.duration<1){const frames=Math.ceil(buffer.sampleRate*MIN_DOWNLOAD_DURATION),ctx=new OfflineAudioContext(buffer.numberOfChannels,frames,buffer.sampleRate),src=ctx.createBufferSource();src.buffer=buffer;src.connect(ctx.destination);src.start();buffer=await ctx.startRendering()}const blob=writeWav(buffer),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=`${word}.wav`;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}catch{const a=document.createElement('a');a.href=url;a.download=`${word}.mp3`;a.click()}finally{btn.textContent=old}}
+function showToast'''
+
+          ns, n = re.subn(pattern, replacement, s, count=1, flags=re.S)
+          if n != 1:
+              raise SystemExit('downloadAudio function not found')
+          p.write_text(ns, encoding='utf-8')
+          PY
+
+      - name: Commit patched compare.html and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- compare.html .github/workflows/apply-audio-wav-fix.yml
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'Apply audio WAV conversion fix'
+          git push
