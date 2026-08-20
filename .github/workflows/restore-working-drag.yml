@@ -1,0 +1,87 @@
+name: Restore working card drag
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  restore-drag:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore setupDrag from verified working version
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          current = Path('compare.html').read_text(encoding='utf-8')
+          old = subprocess.check_output(
+              ['git', 'show', 'd3ddaf9573860b00f67e25af49c51f50b3df0d22:compare.html'],
+              text=True
+          )
+
+          def extract_function(src, name):
+              marker = f'function {name}('
+              start = src.find(marker)
+              if start < 0:
+                  raise SystemExit(f'{name} not found')
+              brace = src.find('{', start)
+              if brace < 0:
+                  raise SystemExit(f'{name}: opening brace not found')
+              depth = 0
+              quote = None
+              escape = False
+              i = brace
+              while i < len(src):
+                  ch = src[i]
+                  if quote:
+                      if escape:
+                          escape = False
+                      elif ch == '\\':
+                          escape = True
+                      elif ch == quote:
+                          quote = None
+                  else:
+                      if ch in "'\"`":
+                          quote = ch
+                      elif ch == '{':
+                          depth += 1
+                      elif ch == '}':
+                          depth -= 1
+                          if depth == 0:
+                              return src[start:i+1]
+                  i += 1
+              raise SystemExit(f'{name}: unmatched braces')
+
+          old_fn = extract_function(old, 'setupDrag')
+          cur_fn = extract_function(current, 'setupDrag')
+          if old_fn == cur_fn:
+              print('setupDrag already matches verified working version; no change needed')
+          else:
+              current = current.replace(cur_fn, old_fn, 1)
+              Path('compare.html').write_text(current, encoding='utf-8')
+              print('Restored setupDrag from d3ddaf9')
+          PY
+
+      - name: Commit restored drag implementation
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git diff --quiet -- compare.html; then
+            echo 'No drag implementation change required.'
+            exit 0
+          fi
+          git add compare.html
+          git commit -m 'Restore verified card drag implementation [skip ci]'
+          git push
