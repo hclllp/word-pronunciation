@@ -1,0 +1,56 @@
+name: Auto update page version
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    if: ${{ !contains(github.event.head_commit.message, 'Auto update page version') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Update page version
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+          from datetime import datetime, timezone
+
+          p = Path('compare.html')
+          s = p.read_text(encoding='utf-8')
+          version = datetime.now(timezone.utc).strftime('v%Y.%m.%d') + '.' + os.environ['RUN_NUMBER']
+
+          if '.version{' not in s:
+              s = s.replace(
+                  'body.reordering .top{pointer-events:none}',
+                  'body.reordering .top{pointer-events:none}.version{margin:10px 0 2px;text-align:center;font-size:9px;color:#c4c9ce;line-height:1;user-select:none;-webkit-user-select:none}'
+              )
+
+          footer = f'<div class="version">{version}</div>'
+          s = re.sub(r'<div class="version">[^<]*</div>', footer, s)
+          if '<div class="version">' not in s:
+              s = s.replace('</main></div><div id="toast"', f'</main>{footer}</div><div id="toast"')
+
+          p.write_text(s, encoding='utf-8')
+          print('Updated page version to', version)
+          PY
+
+      - name: Commit version marker
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add compare.html
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'Auto update page version'
+          git push
