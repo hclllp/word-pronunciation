@@ -16,28 +16,29 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Update page version
-        env:
-          RUN_NUMBER: ${{ github.run_number }}
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import os
           import re
-          from datetime import datetime, timezone
 
           p = Path('compare.html')
           s = p.read_text(encoding='utf-8')
-          version = datetime.now(timezone.utc).strftime('v%Y.%m.%d') + '.' + os.environ['RUN_NUMBER']
-
-          if '.version{' not in s:
-              s = s.replace(
-                  'body.reordering .top{pointer-events:none}',
-                  'body.reordering .top{pointer-events:none}.version{margin:10px 0 2px;text-align:center;font-size:9px;color:#c4c9ce;line-height:1;user-select:none;-webkit-user-select:none}'
-              )
+          m = re.search(r'<div class="version">(\d+)\.(\d+)\.(\d+)</div>', s)
+          if m:
+              major, minor, patch = map(int, m.groups())
+              version = f'{major}.{minor}.{patch + 1}'
+          else:
+              version = '3.0.1'
 
           footer = f'<div class="version">{version}</div>'
-          s = re.sub(r'<div class="version">[^<]*</div>', footer, s)
-          if '<div class="version">' not in s:
+          if re.search(r'<div class="version">[^<]*</div>', s):
+              s = re.sub(r'<div class="version">[^<]*</div>', footer, s, count=1)
+          else:
+              if '.version{' not in s:
+                  s = s.replace(
+                      'body.reordering .top{pointer-events:none}',
+                      'body.reordering .top{pointer-events:none}.version{margin:10px 0 2px;text-align:center;font-size:9px;color:#c4c9ce;line-height:1;user-select:none;-webkit-user-select:none}'
+                  )
               s = s.replace('</main></div><div id="toast"', f'</main>{footer}</div><div id="toast"')
 
           p.write_text(s, encoding='utf-8')
