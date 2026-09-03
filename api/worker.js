@@ -78,7 +78,7 @@ function normalizeCollegiateEntry(entry) {
       { dt: [['text', text]] }
     ]);
     if (normalized.length) {
-      return { ...entry, def: [{ sseq: [normalized.map(x => [x])] }] };
+      return { ...entry, def: [{ sseq: [normalized] }] };
     }
   }
   return entry;
